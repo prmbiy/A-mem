@@ -86,15 +86,15 @@ class OllamaController(BaseLLMController):
 class LLMController:
     """LLM-based controller for memory metadata generation"""
     def __init__(self, 
-                 backend: Literal["openai", "ollama", "mock"] = "openai",
+                 backend: Literal["openai", "ollama"] = "openai",
                  model: str = "gpt-4", 
                  api_key: Optional[str] = None):
         if backend == "openai":
             self.llm = OpenAIController(model, api_key)
         elif backend == "ollama":
             self.llm = OllamaController(model)
-        elif backend == "mock":
-            from test_memory_system import MockLLMController
-            self.llm = MockLLMController()
         else:
-            raise ValueError("Backend must be one of: 'openai', 'ollama', 'mock'")
+            raise ValueError("Backend must be one of: 'openai', 'ollama'")
+            
+    def get_completion(self, prompt: str, response_format: dict = None, temperature: float = 0.7) -> str:
+        return self.llm.get_completion(prompt, response_format, temperature)

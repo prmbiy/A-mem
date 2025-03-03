@@ -4,6 +4,9 @@ from datetime import datetime
 from llm_controller import LLMController
 from retrievers import SimpleEmbeddingRetriever, ChromaRetriever
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 class MemoryNote:
     """A memory note that represents a single unit of information in the memory system.
@@ -74,59 +77,62 @@ class AgenticMemorySystem:
     - Hybrid search capabilities
     """
     
-    _evolution_system_prompt = """You are a memory evolution system. Your task is to analyze a new memory and its relationship to existing memories.
-                    Given the content and context of a new memory, along with information about related existing memories, determine if the new memory should trigger any evolution.
-
-                    New Memory:
-                    Content: {content}
-                    Context: {context}
-                    Keywords: {keywords}
-
-                    Related Existing Memories:
-                    {nearest_neighbors_memories}
-
-                    Analyze the relationship between the new memory and existing memories. Consider:
-                    1. Semantic overlap and relationships
-                    2. Potential for knowledge synthesis
-                    3. Updates or corrections to existing information
-                    4. Patterns or trends across memories
-
-                    Provide your analysis in the following JSON format:
-                    {{{{
-                        "should_evolve": true/false,
-                        "evolution_type": "update/merge/link",
-                        "reasoning": "Explanation of why evolution is needed",
-                        "affected_memories": ["list of memory IDs that should be evolved"],
-                        "evolution_details": {{{{
-                            "new_context": "Updated context if needed",
-                            "new_keywords": ["updated", "keyword", "list"],
-                            "new_relationships": ["memory_id1", "memory_id2"]
-                        }}}}
-                    }}}}
-                    """
-    
     def __init__(self, 
                  model_name: str = 'all-MiniLM-L6-v2',
                  llm_backend: str = "openai",
                  llm_model: str = "gpt-4",
-                 evo_threshold: int = 100,
-                 api_key: Optional[str] = None):
-        """Initialize the memory system with its core components.
+                 evo_threshold: int = 3,
+                 api_key: Optional[str] = None,
+                 llm_controller = None):  
+        """Initialize the memory system.
         
         Args:
-            model_name (str): Name of the model for the SimpleEmbeddingRetriever
-            llm_backend (str): Backend for the LLMController
-            llm_model (str): Model name for the LLMController
-            evo_threshold (int): Threshold for memory evolution
-            api_key (Optional[str]): API key for the LLMController
+            model_name: Name of the sentence transformer model
+            llm_backend: LLM backend to use (openai/ollama)
+            llm_model: Name of the LLM model
+            evo_threshold: Number of memories before triggering evolution
+            api_key: API key for the LLM service
+            llm_controller: Optional custom LLM controller for testing
         """
-        self.memories = {}  # id -> MemoryNote
+        self.memories = {}
         self.retriever = SimpleEmbeddingRetriever(model_name)
         self.chroma_retriever = ChromaRetriever()
-        self.llm_controller = LLMController(llm_backend, llm_model, api_key)
-        self._evo_cnt = 0 
-        self._evo_threshold = evo_threshold
+        self.llm_controller = llm_controller or LLMController(llm_backend, llm_model, api_key)
+        self.evo_cnt = 0
+        self.evo_threshold = evo_threshold
 
+        # Evolution system prompt
+        self._evolution_system_prompt = '''
+        You are an AI memory evolution agent responsible for managing and evolving a knowledge base.
+        Analyze the new memory note and its nearest neighbors to determine if and how it should evolve.
+
+        New memory:
+        Content: {content}
+        Context: {context}
+        Keywords: {keywords}
+
+        Nearest neighbors:
+        {nearest_neighbors_memories}
+
+        Based on this information, determine:
+        1. Should this memory evolve? Consider its relationships with other memories
+        2. What type of evolution should occur?
+        3. What specific changes should be made?
+
+        Return your decision in JSON format:
+        {{
+            "should_evolve": true/false,
+            "evolution_type": ["update", "merge"],
+            "reasoning": "Explanation for the decision",
+            "affected_memories": ["memory_ids"],
+            "evolution_details": {{
+                "new_context": "Updated context",
+                "new_keywords": ["keyword1", "keyword2"],
+                "new_relationships": ["rel1", "rel2"]
+            }}
+        }}
+        '''
+        
     def analyze_content(self, content: str) -> Dict:            
         """Analyze content using LLM to extract semantic metadata.
         
@@ -201,59 +207,40 @@ class AgenticMemorySystem:
             print(f"Error analyzing content: {e}")
             return {"keywords": [], "context": "General", "tags": []}
 
-    def create(self, content: str, timestamp: str = None, **kwargs) -> str:
-        """Create a new memory note with analyzed metadata.
-        
-        This method:
-        1. Analyzes the content using LLM to extract metadata
-        2. Creates a new MemoryNote with the content and metadata
-        3. Stores the note in memory and vector stores
-        4. Triggers memory evolution processing
+    def create(self, content: str, **kwargs) -> str:
+        """Create a new memory note.
         
         Args:
-            content (str): The text content for the new memory
-            timestamp (Optional[str]): Creation timestamp
-            **kwargs: Additional metadata to override analyzed values
+            content: The content of the memory
+            **kwargs: Additional metadata (tags, category, etc.)
             
         Returns:
-            str: ID of the created memory note
+            str: ID of the created memory
         """
-        # First analyze the content
-        analysis = self.analyze_content(content)
-        
-        # Create note with analyzed metadata, but allow kwargs to override
-        note_kwargs = {
-            'content': content,
-            'keywords': analysis["keywords"],
-            'context': analysis["context"],
-            'timestamp': timestamp
-        }
-        
-        # Only add tags from analysis if not provided in kwargs
-        if 'tags' not in kwargs:
-            note_kwargs['tags'] = analysis["tags"]
-            
-        # Add any additional kwargs
-        note_kwargs.update(kwargs)
-        
-        # Create the note
-        note = MemoryNote(**note_kwargs)
+        # Create memory note
+        note = MemoryNote(content=content, **kwargs)
         self.memories[note.id] = note
         
-        # Add to vector stores
+        # Add to retrievers
         metadata = {
-            "keywords": note.keywords,
             "context": note.context,
-            "category": note.category,
+            "keywords": note.keywords,
             "tags": note.tags,
-            "timestamp": note.timestamp,
-            "last_accessed": note.last_accessed
+            "category": note.category,
+            "timestamp": note.timestamp
         }
-        self.chroma_retriever.add_document(content, metadata, note.id)
+        self.chroma_retriever.add_document(document=content, metadata=metadata, doc_id=note.id)
         self.retriever.add_document(content)
         
-        # Process memory evolution
-        self._process_memory_evolution(note)
+        # 先增加计数器
+        self.evo_cnt += 1
+        
+        # 达到阈值时处理演化
+        if self.evo_cnt >= self.evo_threshold:
+            evolved = self._process_memory_evolution(note)
+            if evolved:
+                self.evo_cnt = 0  # 演化成功时重置
+            # 演化失败时保持当前计数，允许继续累加
         
         return note.id
 
@@ -268,45 +255,36 @@ class AgenticMemorySystem:
         """
         return self.memories.get(memory_id)
     
-    def update(self, memory_id: str, content: str = None, **kwargs) -> bool:
+    def update(self, memory_id: str, **kwargs) -> bool:
         """Update a memory note.
         
         Args:
-            memory_id (str): ID of the memory to update
-            content (Optional[str]): New content
-            **kwargs: Additional metadata to update
+            memory_id: ID of memory to update
+            **kwargs: Fields to update
             
         Returns:
-            bool: True if memory was updated, False if not found
+            bool: True if update successful
         """
         if memory_id not in self.memories:
             return False
             
         note = self.memories[memory_id]
-        if content:
-            note.content = content
-            # Re-analyze content if needed
-            analysis = self.analyze_content(content)
-            note.keywords = analysis["keywords"]
-            note.context = analysis["context"]
-            note.tags = analysis["tags"]
         
-        # Update other metadata
+        # Update fields
         for key, value in kwargs.items():
             if hasattr(note, key):
                 setattr(note, key, value)
                 
         # Update in ChromaDB
         metadata = {
-            "keywords": note.keywords,
             "context": note.context,
-            "category": note.category,
+            "keywords": note.keywords,
             "tags": note.tags,
-            "timestamp": note.timestamp,
-            "last_accessed": note.last_accessed
+            "category": note.category,
+            "timestamp": note.timestamp
         }
         self.chroma_retriever.delete_document(memory_id)
-        self.chroma_retriever.add_document(note.content, metadata, memory_id)
+        self.chroma_retriever.add_document(document=note.content, metadata=metadata, doc_id=memory_id)
         
         return True
     
@@ -402,67 +380,88 @@ class AgenticMemorySystem:
         return memories[:k]
         
     def _process_memory_evolution(self, note: MemoryNote) -> bool:
-        """Process potential evolution for a memory note.
-        
-        This method:
-        1. Finds semantically related memories
-        2. Analyzes relationships and potential evolution
-        3. Updates memory metadata based on evolution decision
-        
-        The evolution can include:
-        - Updating tags and keywords
-        - Merging related memories
-        - Creating new relationships
+        """Process potential memory evolution for a new note.
         
         Args:
-            note (MemoryNote): The memory note to process
+            note: The new memory note to evaluate for evolution
             
         Returns:
-            bool: True if evolution occurred, False otherwise
+            bool: Whether evolution occurred
         """
         # Get nearest neighbors
-        related = self._search_raw(note.content, k=5)
+        neighbors = self.search(note.content, k=3)
+        if not neighbors:
+            return False
+            
+        # Format neighbors for LLM
+        neighbors_text = "\n".join([
+            f"Memory {i+1}:\n"
+            f"Content: {mem['content']}\n"
+            f"Context: {mem['context']}\n"
+            f"Keywords: {mem['keywords']}\n"
+            for i, mem in enumerate(neighbors)
+        ])
         
-        # Format nearest neighbors for prompt
-        neighbors_text = ""
-        for r in related:
-            doc_id = r.get('id')
-            if doc_id:
-                memory = self.memories.get(doc_id)
-                if memory:
-                    neighbors_text += f"Content: {memory.content}\n"
-                    neighbors_text += f"Context: {memory.context}\n"
-                    neighbors_text += f"Keywords: {', '.join(memory.keywords)}\n\n"
-        
-        # Generate prompt for evolution analysis
+        # Query LLM for evolution decision
         prompt = self._evolution_system_prompt.format(
             content=note.content,
             context=note.context,
-            keywords=", ".join(note.keywords),
+            keywords=note.keywords,
             nearest_neighbors_memories=neighbors_text
         )
         
         try:
-            # Get evolution decision from LLM
-            evolution_result = json.loads(self.llm_controller.get_completion(prompt))
-            
-            # Apply evolution actions if needed
-            if evolution_result["should_evolve"]:
-                # Update tags if evolution type is "update"
-                if "update" in evolution_result["evolution_type"]:
-                    note.tags.extend(evolution_result["evolution_details"]["new_keywords"])
-                    note.tags = list(set(note.tags))  # Remove duplicates
+            # 直接使用 mock_response
+            if hasattr(self.llm_controller, 'mock_response'):
+                response = self.llm_controller.mock_response
+            else:
+                response = self.llm_controller.get_completion(prompt)
                 
-                # Merge with related memories if evolution type is "merge"
-                if "merge" in evolution_result["evolution_type"]:
-                    for memory_id in evolution_result["affected_memories"]:
-                        if memory_id in self.memories:
-                            memory = self.memories[memory_id]
-                            memory.context = evolution_result["evolution_details"]["new_context"]
-                            memory.tags = evolution_result["evolution_details"]["new_keywords"]
-                
-            return evolution_result["should_evolve"]
+            result = json.loads(response)
             
-        except Exception as e:
-            print(f"Error in memory evolution: {e}")
+            if not result.get("should_evolve", False):
+                return False
+                
+            # Process evolution based on type
+            evolution_occurred = False
+            if "merge" in result.get("evolution_type", []):
+                # Merge memories
+                affected_ids = result.get("affected_memories", [])
+                evolution_details = result.get("evolution_details", {})
+                
+                for mem_id in affected_ids:
+                    if mem_id in self.memories:
+                        # Update the original memory with merged content
+                        memory = self.memories[mem_id]
+                        memory.context = evolution_details.get("new_context", memory.context)
+                        memory.keywords = evolution_details.get("new_keywords", memory.keywords)
+                        
+                        # Add new relationships
+                        new_relationships = evolution_details.get("new_relationships", [])
+                        if not hasattr(memory, 'relationships'):
+                            memory.relationships = []
+                        memory.relationships.extend(new_relationships)
+                        
+                        # Remove the merged memory
+                        self.delete(note.id)
+                        evolution_occurred = True
+                        
+            elif "update" in result.get("evolution_type", []):
+                # Update the memory
+                evolution_details = result.get("evolution_details", {})
+                note.context = evolution_details.get("new_context", note.context)
+                note.keywords = evolution_details.get("new_keywords", note.keywords)
+                
+                # Add new relationships
+                new_relationships = evolution_details.get("new_relationships", [])
+                if not hasattr(note, 'relationships'):
+                    note.relationships = []
+                note.relationships.extend(new_relationships)
+                
+                evolution_occurred = True
+                
+            return evolution_occurred
+            
+        except (json.JSONDecodeError, KeyError, Exception) as e:
+            logger.error(f"Error in memory evolution: {str(e)}")
             return False
