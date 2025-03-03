@@ -151,7 +151,6 @@ memory_system.delete(memory_id)
 
 4. **Multiple LLM Backends** 🤖
    - OpenAI (GPT-4, GPT-3.5)
-   - Mock backend (for testing)
    - Ollama (for local deployment)
 
 ### Best Practices 💪
