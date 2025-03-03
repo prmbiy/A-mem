@@ -15,6 +15,11 @@ Our project introduces an innovative **Agentic Memory** system that revolutioniz
   <em>Comparison between traditional memory system (top) and our proposed agentic memory (bottom). Our system enables dynamic memory operations and flexible agent-memory interactions.</em>
 </div>
 
+> **Note:** This repository provides a memory system to facilitate agent construction. If you want to reproduce the results presented in our paper, please refer to: [https://github.com/WujiangXu/AgenticMemory](https://github.com/WujiangXu/AgenticMemory)
+
+For more details, please refer to our paper: [A-MEM: Agentic Memory for LLM Agents](https://arxiv.org/pdf/2502.12110)
+
+
 ## Key Features ✨
 
 - 🔄 Dynamic memory organization based on Zettelkasten principles
