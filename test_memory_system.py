@@ -137,7 +137,7 @@ class TestAgenticMemorySystem(unittest.TestCase):
             
     def test_memory_evolution_comprehensive(self):
         """Test memory evolution functionality"""
-        # 创建一个带有 mock 控制器的系统
+        # Create a system with mock controller
         mock_controller = MockLLMController()
         system = AgenticMemorySystem(
             model_name='all-MiniLM-L6-v2',
@@ -183,7 +183,7 @@ class TestAgenticMemorySystem(unittest.TestCase):
         
     def test_failed_evolution(self):
         """Test handling of failed evolution attempts"""
-        # 创建一个带有 mock 控制器的系统
+        # Create a system with mock controller
         mock_controller = MockLLMController()
         system = AgenticMemorySystem(
             model_name='all-MiniLM-L6-v2',

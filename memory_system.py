@@ -232,15 +232,15 @@ class AgenticMemorySystem:
         self.chroma_retriever.add_document(document=content, metadata=metadata, doc_id=note.id)
         self.retriever.add_document(content)
         
-        # 先增加计数器
+        # First increment the counter
         self.evo_cnt += 1
         
-        # 达到阈值时处理演化
+        # Process evolution when threshold is reached
         if self.evo_cnt >= self.evo_threshold:
             evolved = self._process_memory_evolution(note)
             if evolved:
-                self.evo_cnt = 0  # 演化成功时重置
-            # 演化失败时保持当前计数，允许继续累加
+                self.evo_cnt = 0  # Reset after successful evolution
+            # Keep current count for failed evolution, allowing further accumulation
         
         return note.id
 
@@ -411,7 +411,7 @@ class AgenticMemorySystem:
         )
         
         try:
-            # 直接使用 mock_response
+            # Use mock_response directly
             if hasattr(self.llm_controller, 'mock_response'):
                 response = self.llm_controller.mock_response
             else:
