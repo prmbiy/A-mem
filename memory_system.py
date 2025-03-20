@@ -126,8 +126,8 @@ class AgenticMemorySystem:
                                 These actions can be combined.
                                 Return your decision in JSON format with the following structure:
                                 {{
-                                    "should_evolve": true/false,
-                                    "actions": ["strengthen", "merge", "prune"],
+                                    "should_evolve": True or False,
+                                    "actions": ["strengthen", "update_neighbor"],
                                     "suggested_connections": ["neighbor_memory_ids"],
                                     "tags_to_update": ["tag_1",..."tag_n"], 
                                     "new_context_neighborhood": ["new context",...,"new context"],
@@ -492,10 +492,7 @@ class AgenticMemorySystem:
                                 "new_context_neighborhood": {
                                     "type": "array",
                                     "items": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "string"
-                                        }
+                                        "type": "string"
                                     }
                                 },
                                 "tags_to_update": {
@@ -524,7 +521,7 @@ class AgenticMemorySystem:
         try:
             response_json = json.loads(response)
             should_evolve = response_json["should_evolve"]
-            if should_evolve == "True":
+            if should_evolve:
                 actions = response_json["actions"]
                 for action in actions:
                     if action == "strengthen":
@@ -532,7 +529,7 @@ class AgenticMemorySystem:
                         new_tags = response_json["tags_to_update"]
                         note.links.extend(suggest_connections)
                         note.tags = new_tags
-                    elif action == "neigh_update":
+                    elif action == "update_neighbor":
                         new_context_neighborhood = response_json["new_context_neighborhood"]
                         new_tags_neighborhood = response_json["new_tags_neighborhood"]
                         noteslist = list(self.memories.values())
