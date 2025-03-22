@@ -120,10 +120,10 @@ class AgenticMemorySystem:
                                 1. Should this memory be evolved? Consider its relationships with other memories.
                                 2. What specific actions should be taken (strengthen, update_neighbor)?
                                    2.1 If choose to strengthen the connection, which memory should it be connected to? Can you give the updated tags of this memory?
-                                   2.2 If choose to update_neighbor, you can update the context and tags of these memories based on the understanding of these memories.
+                                   2.2 If choose to update_neighbor, you can update the context and tags of these memories based on the understanding of these memories. If the context and the tags are not updated, the new context and tags should be the same as the original ones. Generate the new context and tags in the sequential order of the input neighbors.
                                 Tags should be determined by the content of these characteristic of these memories, which can be used to retrieve them later and categorize them.
-                                All the above information should be returned in a list format according to the sequence: [[new_memory],[neighbor_memory_1],...[neighbor_memory_n]]
-                                These actions can be combined.
+                                Note that the length of new_tags_neighborhood must equal the number of input neighbors, and the length of new_context_neighborhood must equal the number of input neighbors.
+                                The number of neighbors is {neighbor_number}.
                                 Return your decision in JSON format with the following structure:
                                 {{
                                     "should_evolve": True or False,
@@ -261,7 +261,12 @@ class AgenticMemorySystem:
         3. Ensures consistent document representation across both retrieval systems
         """
         # 1. Save original configuration
-        model_name = self.retriever.model.get_config_dict()['model_name']
+        try:
+            # Try to get model name through get_config_dict if available
+            model_name = self.retriever.model.get_config_dict()['model_name']
+        except (AttributeError, KeyError):
+            # Fallback: use the model name from the class initialization
+            model_name = 'all-MiniLM-L6-v2'
         collection_name = self.chroma_retriever.collection.name
         
         # 2. Clear and reinitialize retrievers
@@ -534,10 +539,15 @@ class AgenticMemorySystem:
                         new_tags_neighborhood = response_json["new_tags_neighborhood"]
                         noteslist = list(self.memories.values())
                         notes_id = list(self.memories.keys())
-                        for i in range(len(new_tags_neighborhood)):
+                        print("indices", indices)
+                        # if slms output less than the number of neighbors, use the sequential order of new tags and context.
+                        for i in range(min(len(indices), len(new_tags_neighborhood))):
                             # find some memory
                             tag = new_tags_neighborhood[i]
-                            context = new_context_neighborhood[i]
+                            if i < len(new_context_neighborhood):
+                                context = new_context_neighborhood[i]
+                            else:
+                                context = noteslist[indices[i]].context
                             memorytmp_idx = indices[i]
                             notetmp = noteslist[memorytmp_idx]
                             # add tag to memory
