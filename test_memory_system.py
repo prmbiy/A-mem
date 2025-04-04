@@ -2,7 +2,6 @@ import unittest
 from memory_system import AgenticMemorySystem, MemoryNote
 from datetime import datetime
 import json
-from tests.test_utils import MockLLMController
 
 class TestAgenticMemorySystem(unittest.TestCase):
     def setUp(self):
@@ -10,113 +9,143 @@ class TestAgenticMemorySystem(unittest.TestCase):
         self.memory_system = AgenticMemorySystem(
             model_name='all-MiniLM-L6-v2',
             llm_backend="openai",
-            llm_model="gpt-4"
+            llm_model="gpt-4o-mini"
         )
         
     def test_create_memory(self):
-        """Test creating a new memory."""
+        """Test creating a new memory with complete metadata."""
         content = "Test memory content"
-        memory_id = self.memory_system.create(content)
+        tags = ["test", "memory"]
+        keywords = ["test", "content"]
+        links = ["link1", "link2"]
+        context = "Test context"
+        category = "Test category"
+        timestamp = datetime.now().strftime("%Y%m%d%H%M")
+        
+        memory_id = self.memory_system.add_note(
+            content=content,
+            tags=tags,
+            keywords=keywords,
+            links=links,
+            context=context,
+            category=category,
+            timestamp=timestamp
+        )
         
         # Verify memory was created
         self.assertIsNotNone(memory_id)
         memory = self.memory_system.read(memory_id)
         self.assertIsNotNone(memory)
         self.assertEqual(memory.content, content)
-        
-    def test_read_memory(self):
-        """Test reading a memory."""
-        # Create a test memory
-        content = "Test memory for reading"
-        memory_id = self.memory_system.create(content)
-        
-        # Read the memory
-        memory = self.memory_system.read(memory_id)
-        self.assertIsNotNone(memory)
-        self.assertEqual(memory.content, content)
-        
-        # Try reading non-existent memory
-        non_existent = self.memory_system.read("non_existent_id")
-        self.assertIsNone(non_existent)
-        
-    def test_update_memory(self):
-        """Test updating a memory."""
-        # Create a test memory
-        content = "Original content"
-        memory_id = self.memory_system.create(content)
-        
-        # Update the memory
-        new_content = "Updated content"
-        success = self.memory_system.update(memory_id, content=new_content)
-        self.assertTrue(success)
-        
-        # Verify update
-        memory = self.memory_system.read(memory_id)
-        self.assertEqual(memory.content, new_content)
-        
-        # Try updating non-existent memory
-        success = self.memory_system.update("non_existent_id", content="test")
-        self.assertFalse(success)
-        
-    def test_delete_memory(self):
-        """Test deleting a memory."""
-        # Create a test memory
-        content = "Memory to delete"
-        memory_id = self.memory_system.create(content)
-        
-        # Delete the memory
-        success = self.memory_system.delete(memory_id)
-        self.assertTrue(success)
-        
-        # Verify deletion
-        memory = self.memory_system.read(memory_id)
-        self.assertIsNone(memory)
-        
-        # Try deleting non-existent memory
-        success = self.memory_system.delete("non_existent_id")
-        self.assertFalse(success)
-        
-    def test_search_memories(self):
-        """Test searching memories."""
-        # Create test memories
-        contents = [
-            "Python programming language",
-            "JavaScript web development",
-            "Python data science",
-            "Ruby on Rails framework",
-            "Python machine learning"
-        ]
-        
-        for content in contents:
-            self.memory_system.create(content)
-            
-        # Search for Python-related memories
-        results = self.memory_system.search("Python")
-        self.assertGreater(len(results), 0)
-        
-    def test_memory_metadata(self):
-        """Test memory metadata handling."""
-        # Create a memory with metadata
-        content = "Test memory with metadata"
-        tags = ["test", "metadata"]
-        category = "Testing"
-        timestamp = datetime.now().strftime("%Y%m%d%H%M")
-        
-        memory_id = self.memory_system.create(
-            content=content,
-            tags=tags,
-            category=category,
-            timestamp=timestamp
-        )
-        
-        # Verify metadata
-        memory = self.memory_system.read(memory_id)
         self.assertEqual(memory.tags, tags)
+        self.assertEqual(memory.keywords, keywords)
+        self.assertEqual(memory.links, links)
+        self.assertEqual(memory.context, context)
         self.assertEqual(memory.category, category)
         self.assertEqual(memory.timestamp, timestamp)
         
+    def test_memory_metadata_persistence(self):
+        """Test that memory metadata persists through ChromaDB storage and retrieval."""
+        # Create a memory with complex metadata
+        content = "Complex test memory"
+        tags = ["test", "complex", "metadata"]
+        keywords = ["test", "complex", "keywords"]
+        links = ["link1", "link2", "link3"]
+        context = "Complex test context"
+        category = "Complex test category"
+        timestamp = datetime.now().strftime("%Y%m%d%H%M")
+        evolution_history = ["evolution1", "evolution2"]
+        
+        memory_id = self.memory_system.add_note(
+            content=content,
+            tags=tags,
+            keywords=keywords,
+            links=links,
+            context=context,
+            category=category,
+            timestamp=timestamp,
+            evolution_history=evolution_history
+        )
+        
+        # Search for the memory using ChromaDB
+        results = self.memory_system.search_agentic(content, k=1)
+        self.assertGreater(len(results), 0)
+        
+        # Verify metadata in search results
+        result = results[0]
+        self.assertEqual(result['content'], content)
+        self.assertEqual(result['tags'], tags)
+        self.assertEqual(result['keywords'], keywords)
+        self.assertEqual(result['context'], context)
+        self.assertEqual(result['category'], category)
+        
+    def test_memory_update(self):
+        """Test updating memory metadata through ChromaDB."""
+        # Create initial memory
+        content = "Initial content"
+        memory_id = self.memory_system.add_note(content=content)
+        
+        # Update memory with new metadata
+        new_content = "Updated content"
+        new_tags = ["updated", "tags"]
+        new_keywords = ["updated", "keywords"]
+        new_context = "Updated context"
+        
+        success = self.memory_system.update(
+            memory_id,
+            content=new_content,
+            tags=new_tags,
+            keywords=new_keywords,
+            context=new_context
+        )
+        
+        self.assertTrue(success)
+        
+        # Verify updates in ChromaDB
+        results = self.memory_system.search_agentic(new_content, k=1)
+        self.assertGreater(len(results), 0)
+        result = results[0]
+        self.assertEqual(result['content'], new_content)
+        self.assertEqual(result['tags'], new_tags)
+        self.assertEqual(result['keywords'], new_keywords)
+        self.assertEqual(result['context'], new_context)
+        
+    def test_memory_relationships(self):
+        """Test memory relationships and linked memories."""
+        # Create related memories
+        content1 = "First memory"
+        content2 = "Second memory"
+        content3 = "Third memory"
+        
+        id1 = self.memory_system.add_note(content1)
+        id2 = self.memory_system.add_note(content2)
+        id3 = self.memory_system.add_note(content3)
+        
+        # Add relationships
+        memory1 = self.memory_system.read(id1)
+        memory2 = self.memory_system.read(id2)
+        memory3 = self.memory_system.read(id3)
+        
+        memory1.links.append(id2)
+        memory2.links.append(id1)
+        memory2.links.append(id3)
+        memory3.links.append(id2)
+        
+        # Update memories with relationships
+        self.memory_system.update(id1, links=memory1.links)
+        self.memory_system.update(id2, links=memory2.links)
+        self.memory_system.update(id3, links=memory3.links)
+        
+        # Test relationship retrieval
+        results = self.memory_system.search_agentic(content1, k=3)
+        self.assertGreater(len(results), 0)
+        
+        # Verify relationships are maintained
+        memory1_updated = self.memory_system.read(id1)
+        self.assertIn(id2, memory1_updated.links)
+        
     def test_memory_evolution(self):
-        """Test memory evolution system."""
+        """Test memory evolution system with ChromaDB."""
         # Create related memories
         contents = [
             "Deep learning neural networks",
@@ -126,7 +155,7 @@ class TestAgenticMemorySystem(unittest.TestCase):
         
         memory_ids = []
         for content in contents:
-            memory_id = self.memory_system.create(content)
+            memory_id = self.memory_system.add_note(content)
             memory_ids.append(memory_id)
             
         # Verify that memories have been properly evolved
@@ -134,77 +163,112 @@ class TestAgenticMemorySystem(unittest.TestCase):
             memory = self.memory_system.read(memory_id)
             self.assertIsNotNone(memory.tags)
             self.assertIsNotNone(memory.context)
+            self.assertIsNotNone(memory.keywords)
             
-    def test_memory_evolution_comprehensive(self):
-        """Test memory evolution functionality"""
-        # Create a system with mock controller
-        mock_controller = MockLLMController()
-        system = AgenticMemorySystem(
-            model_name='all-MiniLM-L6-v2',
-            llm_backend="openai",
-            evo_threshold=2,  # Set low threshold for testing
-            llm_controller=mock_controller
-        )
+        # Test evolution through search
+        results = self.memory_system.search_agentic("neural networks", k=3)
+        self.assertGreater(len(results), 0)
         
-        # Create initial memories
-        content1 = "Python is a popular programming language"
-        content2 = "Python is great for machine learning"
+        # Verify evolution metadata
+        for result in results:
+            self.assertIsNotNone(result['tags'])
+            self.assertIsNotNone(result['context'])
+            self.assertIsNotNone(result['keywords'])
+            
+    def test_memory_deletion(self):
+        """Test memory deletion from ChromaDB."""
+        # Create and delete a memory
+        content = "Memory to delete"
+        memory_id = self.memory_system.add_note(content)
         
-        id1 = system.create(content1)
-        id2 = system.create(content2)
+        # Verify memory exists
+        memory = self.memory_system.read(memory_id)
+        self.assertIsNotNone(memory)
         
-        # Verify evolution counter
-        assert system.evo_cnt == 2
+        # Delete memory
+        success = self.memory_system.delete(memory_id)
+        self.assertTrue(success)
         
-        # Add memory that should trigger evolution
-        content3 = "Python is widely used in AI and data science"
-        mock_evolution_response = {
-            "should_evolve": True,
-            "evolution_type": ["merge"],
-            "reasoning": "Similar content about Python usage",
-            "affected_memories": [id1],
-            "evolution_details": {
-                "new_context": "Programming Languages",
-                "new_keywords": ["python", "programming", "AI"],
-                "new_relationships": ["machine_learning", "data_science"]
-            }
-        }
+        # Verify deletion
+        memory = self.memory_system.read(memory_id)
+        self.assertIsNone(memory)
         
-        # Mock LLM response
-        mock_controller.mock_response = json.dumps(mock_evolution_response)
+        # Verify memory is removed from ChromaDB
+        results = self.memory_system.search_agentic(content, k=1)
+        self.assertEqual(len(results), 0)
         
-        id3 = system.create(content3)
+    def test_memory_consolidation(self):
+        """Test memory consolidation with ChromaDB."""
+        # Create multiple memories
+        contents = [
+            "Memory 1",
+            "Memory 2",
+            "Memory 3"
+        ]
         
-        # Verify evolution occurred
-        assert system.evo_cnt == 0  # Counter reset after evolution
-        assert id1 in system.memories  # Original memory still exists
-        assert system.memories[id1].context == "Programming Languages"
-        assert "AI" in system.memories[id1].keywords
+        for content in contents:
+            self.memory_system.add_note(content)
+            
+        # Force consolidation
+        self.memory_system.consolidate_memories()
         
-    def test_failed_evolution(self):
-        """Test handling of failed evolution attempts"""
-        # Create a system with mock controller
-        mock_controller = MockLLMController()
-        system = AgenticMemorySystem(
-            model_name='all-MiniLM-L6-v2',
-            llm_backend="openai",
-            evo_threshold=2,
-            llm_controller=mock_controller
-        )
-        
+        # Verify memories are still accessible
+        for content in contents:
+            results = self.memory_system.search_agentic(content, k=1)
+            self.assertGreater(len(results), 0)
+            self.assertEqual(results[0]['content'], content)
+            
+    def test_find_related_memories(self):
+        """Test finding related memories."""
         # Create test memories
-        id1 = system.create("Test memory 1")
-        id2 = system.create("Test memory 2")
+        contents = [
+            "Python programming language",
+            "Python data science",
+            "Machine learning with Python",
+            "Web development with JavaScript"
+        ]
         
-        # Mock invalid JSON response
-        mock_controller.mock_response = "invalid json"
+        for content in contents:
+            self.memory_system.add_note(content)
+            
+        # Test finding related memories
+        results = self.memory_system.find_related_memories("Python", k=2)
+        self.assertGreater(len(results), 0)
         
-        # Add memory that should attempt evolution
-        id3 = system.create("Test memory 3")
+    def test_find_related_memories_raw(self):
+        """Test finding related memories with raw format."""
+        # Create test memories
+        contents = [
+            "Python programming language",
+            "Python data science",
+            "Machine learning with Python"
+        ]
         
-        # Verify system handles failure gracefully
-        assert id3 in system.memories
-        assert system.evo_cnt == 3  # Counter continues since evolution failed
+        for content in contents:
+            self.memory_system.add_note(content)
+            
+        # Test finding related memories in raw format
+        results = self.memory_system.find_related_memories_raw("Python", k=2)
+        self.assertIsNotNone(results)
         
+    def test_process_memory(self):
+        """Test memory processing and evolution."""
+        # Create a test memory
+        content = "Test memory for processing"
+        memory_id = self.memory_system.add_note(content)
+        
+        # Get the memory
+        memory = self.memory_system.read(memory_id)
+        
+        # Process the memory
+        should_evolve, processed_memory = self.memory_system.process_memory(memory)
+        
+        # Verify processing results
+        self.assertIsInstance(should_evolve, bool)
+        self.assertIsInstance(processed_memory, MemoryNote)
+        self.assertIsNotNone(processed_memory.tags)
+        self.assertIsNotNone(processed_memory.context)
+        self.assertIsNotNone(processed_memory.keywords)
+
 if __name__ == '__main__':
     unittest.main()

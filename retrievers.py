@@ -9,61 +9,10 @@ from chromadb.config import Settings
 import pickle
 from nltk.tokenize import word_tokenize
 import os
+import json
 
 def simple_tokenize(text):
     return word_tokenize(text)
-
-class SimpleEmbeddingRetriever:
-    """Simple retriever using sentence embeddings"""
-    def __init__(self, model_name: str = 'all-MiniLM-L6-v2'):
-        self.model = SentenceTransformer(model_name)
-        self.documents = []
-        self.embeddings = None
-        
-    def add_document(self, document: str):
-        """Add a document to the retriever.
-        
-        Args:
-            document: Text content to add
-        """
-        self.documents.append(document)
-        # Update embeddings
-        if len(self.documents) == 1:
-            self.embeddings = self.model.encode([document])
-        else:
-            new_embedding = self.model.encode([document])
-            self.embeddings = np.vstack([self.embeddings, new_embedding])
-            
-    def search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
-        """Search for similar documents.
-        
-        Args:
-            query: Search query
-            top_k: Number of results to return
-            
-        Returns:
-            List of dictionaries containing document content and similarity score
-        """
-        if not self.documents:
-            return []
-            
-        # Get query embedding
-        query_embedding = self.model.encode([query])
-        
-        # Calculate cosine similarities
-        similarities = cosine_similarity(query_embedding, self.embeddings)[0]
-        
-        # Get top k results
-        top_indices = np.argsort(similarities)[-top_k:][::-1]
-        
-        results = []
-        for idx in top_indices:
-            results.append({
-                'content': self.documents[idx],
-                'score': float(similarities[idx])
-            })
-            
-        return results
 
 class ChromaRetriever:
     """Vector database retrieval using ChromaDB"""
@@ -84,13 +33,15 @@ class ChromaRetriever:
             metadata: Dictionary of metadata
             doc_id: Unique identifier for the document
         """
-        # Convert lists to strings in metadata to comply with ChromaDB requirements
+        # Convert MemoryNote object to serializable format
         processed_metadata = {}
         for key, value in metadata.items():
             if isinstance(value, list):
-                processed_metadata[key] = ", ".join(value)
+                processed_metadata[key] = json.dumps(value)
+            elif isinstance(value, dict):
+                processed_metadata[key] = json.dumps(value)
             else:
-                processed_metadata[key] = value
+                processed_metadata[key] = str(value)
                 
         self.collection.add(
             documents=[document],
@@ -114,18 +65,36 @@ class ChromaRetriever:
             k: Number of results to return
             
         Returns:
-            List of dicts with document text and metadata
+            Dict with documents, metadatas, ids, and distances
         """
         results = self.collection.query(
             query_texts=[query],
             n_results=k
         )
         
-        # Convert string metadata back to lists where appropriate
-        if 'metadatas' in results and results['metadatas']:
-            for metadata in results['metadatas']:
-                for key in ['keywords', 'tags']:
-                    if key in metadata and isinstance(metadata[key], str):
-                        metadata[key] = [item.strip() for item in metadata[key].split(',')]
+        # Convert string metadata back to original types
+        if 'metadatas' in results and results['metadatas'] and len(results['metadatas']) > 0:
+            # First level is a list with one item per query
+            for i in range(len(results['metadatas'])):
+                # Second level is a list of metadata dicts for each result
+                if isinstance(results['metadatas'][i], list):
+                    for j in range(len(results['metadatas'][i])):
+                        # Process each metadata dict
+                        if isinstance(results['metadatas'][i][j], dict):
+                            metadata = results['metadatas'][i][j]
+                            for key, value in metadata.items():
+                                try:
+                                    # Try to parse JSON for lists and dicts
+                                    if isinstance(value, str) and (value.startswith('[') or value.startswith('{')):
+                                        metadata[key] = json.loads(value)
+                                    # Convert numeric strings back to numbers
+                                    elif isinstance(value, str) and value.replace('.', '', 1).isdigit():
+                                        if '.' in value:
+                                            metadata[key] = float(value)
+                                        else:
+                                            metadata[key] = int(value)
+                                except (json.JSONDecodeError, ValueError):
+                                    # If parsing fails, keep the original string
+                                    pass
                         
         return results
