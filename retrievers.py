@@ -10,20 +10,22 @@ import pickle
 from nltk.tokenize import word_tokenize
 import os
 import json
+from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 
 def simple_tokenize(text):
     return word_tokenize(text)
 
 class ChromaRetriever:
     """Vector database retrieval using ChromaDB"""
-    def __init__(self, collection_name: str = "memories"):
+    def __init__(self, collection_name: str = "memories",model_name: str = "all-MiniLM-L6-v2"):
         """Initialize ChromaDB retriever.
         
         Args:
             collection_name: Name of the ChromaDB collection
         """
         self.client = chromadb.Client(Settings(allow_reset=True))
-        self.collection = self.client.get_or_create_collection(name=collection_name)
+        self.embedding_function = SentenceTransformerEmbeddingFunction(model_name=model_name)
+        self.collection = self.client.get_or_create_collection(name=collection_name,embedding_function=self.embedding_function)
         
     def add_document(self, document: str, metadata: Dict, doc_id: str):
         """Add a document to ChromaDB.

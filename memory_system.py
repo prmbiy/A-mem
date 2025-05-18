@@ -106,17 +106,17 @@ class AgenticMemorySystem:
             api_key: API key for the LLM service
         """
         self.memories = {}
-        
+        self.model_name = model_name
         # Initialize ChromaDB retriever with empty collection
         try:
             # First try to reset the collection if it exists
-            temp_retriever = ChromaRetriever(collection_name="memories")
+            temp_retriever = ChromaRetriever(collection_name="memories",model_name=self.model_name)
             temp_retriever.client.reset()
         except Exception as e:
             logger.warning(f"Could not reset ChromaDB collection: {e}")
             
         # Create a fresh retriever instance
-        self.retriever = ChromaRetriever(collection_name="memories")
+        self.retriever = ChromaRetriever(collection_name="memories",model_name=self.model_name)
         
         # Initialize LLM controller
         self.llm_controller = LLMController(llm_backend, llm_model, api_key)
@@ -266,7 +266,7 @@ class AgenticMemorySystem:
     def consolidate_memories(self):
         """Consolidate memories: update retriever with new documents"""
         # Reset ChromaDB collection
-        self.retriever = ChromaRetriever(collection_name="memories")
+        self.retriever = ChromaRetriever(collection_name="memories",model_name=self.model_name)
         
         # Re-add all memory documents with their complete metadata
         for memory in self.memories.values():
@@ -430,31 +430,13 @@ class AgenticMemorySystem:
                 for doc_id, score in zip(results['ids'][0], results['distances'][0])]
                 
     def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
-        """Search for memories using a hybrid retrieval approach.
-        
-        This method combines results from both:
-        1. ChromaDB vector store (semantic similarity)
-        2. Embedding-based retrieval (dense vectors)
-        
-        The results are deduplicated and ranked by relevance.
-        
-        Args:
-            query (str): The search query text
-            k (int): Maximum number of results to return
-            
-        Returns:
-            List[Dict[str, Any]]: List of search results, each containing:
-                - id: Memory ID
-                - content: Memory content
-                - score: Similarity score
-                - metadata: Additional memory metadata
-        """
-        # Get results from ChromaDB
-        chroma_results = self.retriever.search(query, k)
+        """Search for memories using a hybrid retrieval approach."""
+        # Get results from ChromaDB (only do this once)
+        search_results = self.retriever.search(query, k)
         memories = []
         
         # Process ChromaDB results
-        for i, doc_id in enumerate(chroma_results['ids'][0]):
+        for i, doc_id in enumerate(search_results['ids'][0]):
             memory = self.memories.get(doc_id)
             if memory:
                 memories.append({
@@ -462,29 +444,9 @@ class AgenticMemorySystem:
                     'content': memory.content,
                     'context': memory.context,
                     'keywords': memory.keywords,
-                    'score': chroma_results['distances'][0][i]
+                    'score': search_results['distances'][0][i]
                 })
-                
-        # Get results from embedding retriever
-        indices = self.retriever.search(query, k)
         
-        # Combine results with deduplication
-        seen_ids = set(m['id'] for m in memories)
-        for idx in indices:
-            document = self.retriever.documents[idx]
-            memory_id = self.retriever.documents.index(document)
-            if document and document not in seen_ids:
-                memory = self.memories.get(memory_id)
-                if memory:
-                    memories.append({
-                        'id': idx,
-                        'content': document,
-                        'context': memory.context,
-                        'keywords': memory.keywords,
-                        'score': result.get('score', 0.0)
-                    })
-                    seen_ids.add(memory_id)
-                    
         return memories[:k]
     
     def _search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:

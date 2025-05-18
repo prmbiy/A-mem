@@ -7,6 +7,7 @@ class TestAgenticMemorySystem(unittest.TestCase):
     def setUp(self):
         """Set up test environment before each test."""
         self.memory_system = AgenticMemorySystem(
+            # model_name='sentence-transformers/paraphrase-mpnet-base-v2',
             model_name='all-MiniLM-L6-v2',
             llm_backend="openai",
             llm_model="gpt-4o-mini"
